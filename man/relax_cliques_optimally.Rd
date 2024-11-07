@@ -75,7 +75,7 @@ So the search is performed in two steps like in \code{\link[=thr_optimizer]{thr_
 are acting exactly the same as in \code{\link[=thr_optimizer]{thr_optimizer()}}, but range of weights which is searched is that of \code{CS} matrix and scores are obtained by
 evaluating \code{cs_thr_objective} on resulting partition and original node similarity \code{S}.
 
-\code{cs_thr_objective} can be a character string, then it can either be \code{modularity} (optimizing \code{\link[igraph:modularity.igraph]{igraph::modularity()}}) or \code{mst} (optimizing \code{\link[=MinST_DunnIndex]{MinST_DunnIndex()}}, converting similarities to distances).
+\code{cs_thr_objective} can be a character string, then it can either be \code{modularity} (optimizing \code{\link[igraph:modularity.igraph]{igraph::modularity()}}) or \code{nn} (optimizing \code{\link[=NN_DunnIndex]{NN_DunnIndex()}}, converting similarities to distances).
 This argument can also be a function. Valid function here must accept node cluster membership vector as first argument and original node to node similarity matrix \code{S} as the second. Additional arguments can be passed by \code{...}. Return value should be scalar (the bigger the better grade).
 
 \code{relax_method}, \code{clq_importance} are passed to \code{\link[=relax_cliques]{relax_cliques()}}, see that function for description of these arguments.

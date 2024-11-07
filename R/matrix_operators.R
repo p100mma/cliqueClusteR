@@ -27,3 +27,19 @@
 #' @export
 
 ltr_<-function(M) M[lower.tri(M)]
+
+
+#' Convert symmetric matrix to undirected weighted graph from igraph 
+#'
+#' Note: this discards loops (diagonal of the matrix)
+#'
+#' @param W Weight matrix of the graph to construct
+#' @return Undirected weighted graph object from igraph with weights from `W`
+#' @examples
+#' data(leukemia)
+#' hist(igraph::transitivity(igr_(W), type="weighted"), main="weighted clustering coefficient")
+#' @export
+
+igr_<-function(W) igraph::graph_from_adjacency_matrix( W, mode="undirected", weighted=TRUE, diag=FALSE)
+
+

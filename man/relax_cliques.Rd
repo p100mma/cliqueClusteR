@@ -67,13 +67,45 @@ If \code{CS_given} is \code{TRUE}, then \code{SorCS} is assumed to be precompute
 }
 \examples{
 data(leukemia)
+data(leukemia_clusters)
+#example 1: threshold selection by optimizing "clique complexity score"
 opt_<- thr_optimizer(leukemia)
 cliqueSimilarity(opt_$maximizer_partition, leukemia \%thr\% opt_$thr)-> cS
+#initial threshold on leukemia matrix so good we do not really need thresholding of cS for reasonable separation
 cluster_membership<- relax_cliques(opt_$maximizer_partition, cS,
-                                   CS_given=TRUE)
+                                   CS_given=TRUE,        #default FALSE, means 2nd arg is cS not orig. similarity
+				     relax_method="components",
+				frac=0.0) #no thresholding of cS here
 #node lvl memberships: clique and cluster
 table(opt_$maximizer_partition)
 table(cluster_membership$node)
 #clique lvl membership:
 table(cluster_membership$cliq)
+igraph::compare(cluster_membership$node, leukemia_clusters, 'adjusted.rand')
+heatmap(leukemia, Rowv=NA, Colv=NA, scale="none", main="original similarity matrix")
+heatmap(leukemia \%thr\% opt_thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
+
+#example 2: threshold selection by considering MST
+thr_1<- critical_mst_thr(leukemia)
+p1<- greedyCliquePartitioner(leukemia \%thr\% thr_1)$membership
+cl1<- relax_cliques(p1, SorCS=leukemia \%thr\% thr_1, #one can give similarity instead of cS matrix
+                      relax_method="components", frac=0.5 )
+#first application: not enough to find the natural clusters fully
+heatmap(leukemia \%thr\% thr_1, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by lvl1 critical MST")
+igraph::compare(cl1$node, leukemia_clusters, "adjusted.rand")
+#increasing frac improves result
+cl1<- relax_cliques(p1, SorCS=leukemia \%thr\% thr_1, #one can give similarity instead of cS matrix
+                      relax_method="components", frac=0.95 )
+igraph::compare(cl1$node, leukemia_clusters, "adjusted.rand")
+#another strategy: apply initial thresholding more than once
+ #iterate 3 times
+thr_3<- critical_mst_thr(leukemia \%thr\% critical_mst_thr(leukemia \%thr\% thr_1))
+#much more separation
+heatmap(leukemia \%thr\% thr_3, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by lvl3 critical MST")
+p3<- greedyCliquePartitioner(leukemia \%thr\% thr_3)$membership
+#cliques alone can separate clusters pretty accurately
+igraph::compare(p3, leukemia_clusters, "adjusted.rand")
+#relaxation by connecting cliques similar above 0.1 solves problem almost perfectly 
+cl3<- relax_cliques(p3, leukemia \%thr\% thr_3, relax_method="components", frac=0.95)
+igraph::compare(cl3$node, leukemia_clusters, "adjusted.rand") 
 }

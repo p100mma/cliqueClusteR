@@ -148,9 +148,14 @@ G_ds= igraph::graph_from_adjacency_matrix(adjmatrix=dS, mode="undirected", weigh
 igraph::mst(G_ds)-> ds_mst
 #convert back to similarities so we sort weights of MAXIMIMUM spanning tree as in description
 sort( max(S) - igraph::E(ds_mst)$weight, decreasing=TRUE)-> wMSTsorted
-wdiffs= diff(wMSTsorted)
+wMSTsorted<- wMSTsorted[ wMSTsorted!=0 ]
+wdiffs= -1*(diff(wMSTsorted))
 wmeans= (wMSTsorted[ 2: length(wMSTsorted) ] + wMSTsorted[ 1: (length(wMSTsorted)-1) ])/2
-wmeans[[ which.max(wdiffs) ]]
+wmeans[[ which.max(wdiffs) ]]-> w_t
+attr(w_t, "mst_weights")<- wMSTsorted
+attr(w_t, "wdiffs")<- wdiffs
+attr(w_t, "wmeans")<- wmeans
+w_t
 
 }
 

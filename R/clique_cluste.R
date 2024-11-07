@@ -114,15 +114,47 @@ cS_components<- function(cS, clq_mem) {
 #' Attribute `labelMap` is set if it was set if non zero labels of cliques were not consecutive integers, see details.
 #' @examples
 #' data(leukemia)
+#' data(leukemia_clusters)
+#' #example 1: threshold selection by optimizing "clique complexity score"
 #' opt_<- thr_optimizer(leukemia)
 #' cliqueSimilarity(opt_$maximizer_partition, leukemia %thr% opt_$thr)-> cS
+#' #initial threshold on leukemia matrix so good we do not really need thresholding of cS for reasonable separation
 #' cluster_membership<- relax_cliques(opt_$maximizer_partition, cS,
-#'                                    CS_given=TRUE)
+#'                                    CS_given=TRUE,        #default FALSE, means 2nd arg is cS not orig. similarity
+#' 				     relax_method="components",
+#'					frac=0.0) #no thresholding of cS here
 #' #node lvl memberships: clique and cluster
 #' table(opt_$maximizer_partition)
 #' table(cluster_membership$node)
 #' #clique lvl membership:
 #' table(cluster_membership$cliq)
+#' igraph::compare(cluster_membership$node, leukemia_clusters, 'adjusted.rand')
+#' heatmap(leukemia, Rowv=NA, Colv=NA, scale="none", main="original similarity matrix")
+#' heatmap(leukemia %thr% opt_thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
+#' 
+#' #example 2: threshold selection by considering MST
+#' thr_1<- critical_mst_thr(leukemia)
+#' p1<- greedyCliquePartitioner(leukemia %thr% thr_1)$membership
+#' cl1<- relax_cliques(p1, SorCS=leukemia %thr% thr_1, #one can give similarity instead of cS matrix
+#'                       relax_method="components", frac=0.5 )
+#' #first application: not enough to find the natural clusters fully
+#' heatmap(leukemia %thr% thr_1, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by lvl1 critical MST")
+#' igraph::compare(cl1$node, leukemia_clusters, "adjusted.rand")
+#' #increasing frac improves result
+#' cl1<- relax_cliques(p1, SorCS=leukemia %thr% thr_1, #one can give similarity instead of cS matrix
+#'                       relax_method="components", frac=0.95 )
+#' igraph::compare(cl1$node, leukemia_clusters, "adjusted.rand")
+#' #another strategy: apply initial thresholding more than once
+#'  #iterate 3 times
+#' thr_3<- critical_mst_thr(leukemia %thr% critical_mst_thr(leukemia %thr% thr_1))
+#' #much more separation
+#' heatmap(leukemia %thr% thr_3, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by lvl3 critical MST")
+#' p3<- greedyCliquePartitioner(leukemia %thr% thr_3)$membership
+#' #cliques alone can separate clusters pretty accurately
+#' igraph::compare(p3, leukemia_clusters, "adjusted.rand")
+#' #relaxation by connecting cliques similar above 0.1 solves problem almost perfectly 
+#' cl3<- relax_cliques(p3, leukemia %thr% thr_3, relax_method="components", frac=0.95)
+#' igraph::compare(cl3$node, leukemia_clusters, "adjusted.rand") 
 #' @export
 
 relax_cliques<- function(partition,
@@ -165,11 +197,12 @@ relax_cliques<- function(partition,
 
 #objective functions for clique clustering threshold choice
 
-#' Calculate Dunn Index goodness of clustering variant based on Minimum Spanning Tree
+#' Calculate Dunn Index goodness of clustering variant based on kNN 
 #'
 #' For a given dissimilarity graph `dS` and partition of `dS` into 
 #' clusters, function will compute Dunn Index considering 
-#' dissimilarities of Minimum Spanning Tree (MST), see details.
+#' average of weights of all edges between all k nearest neighbors of a pair of farthest/closest
+#' nodes located inside one cluster/in different clusters, see details.
 #'
 #' @details
 #' In general, Dunn Index is defined as `min_between_cluster_distance/max_cluster_diameter` - the bigger
@@ -179,11 +212,19 @@ relax_cliques<- function(partition,
 #' with literature this function works with dissimilarities. Below by distance we mean dissimilarity.
 #' Dissimilarity can be derived from similarity matrix for example by `dS= max(S) - S`.
 #'
-#' This function computes `between_cluster_distance` between clusters `i,j` as a minimum distance between 
-#' any nodes inside clusters `i,j`.
-#' `cluster_diameter` is defined as maximal nearest-neighbor distance in the cluster. 
-#' Both of those quantities are derived from minimum spanning tree of the graph described by `dS`.
+#' For finding non-spherical clusters, this function computes `between_cluster_distance` 
+#' between clusters `i,j` as a minimum distance between any nodes inside clusters `i,j`.
+#' And `cluster_diameter` is defined as maximal nearest-neighbor distance in the cluster. 
 #'
+#' To reduce sensivity to the outliers, a paramater `k` is used to compute averages of distances in
+#' deriving diameters and between cluster distances.
+#'
+#' Mean kNN distance between nodes `g,h` in clusters `i,j` (`i` can be equal to `j`) is defined as:
+#` \itemize{
+#' \item `mean( weights of all edges between N_k(g) and N_k(h) )`
+#' \item where `N_k(g)` is set of `k` nearest neighbors of `g` in cluster `i`
+#' \item `N_k(h)` is set of `k` nearest neighbors of `h` in cluster `j`
+#'}
 #' Value of the index is undefined if there is only one cluster or all clusters are singletons, in that case 
 #' `NA` is returned. 
 #' For the case when maximum cluster diameter is 0 value of the index is infinity 
@@ -204,10 +245,29 @@ relax_cliques<- function(partition,
 #' @param partition A vector of membership labels of clusters of each node, 0 labels get converted to singleton labels by [cliquePartitioneR::uniqueSingletonLabels()]
 #' @param outlier_mask (experimental) if not null, if `outlier_mask[i]` is `TRUE` then node `i` is not included in the calculation, see details.
 #' @return A scalar value indicating the goodness of clustering, the bigger the better. Can be `Inf` if max cluster diameter is 0. If both `min_between_cluster_distance` and `max_cluster_diameter` are 0, function returns 0 by convention.
+#' @examples
+#' data(leukemia)
+#' data(leukemia_clusters)
+#' thr_1<- critical_mst_thr(leukemia)
+#' p1<- greedyCliquePartitioner(leukemia %thr% thr_1)$membership
+#' thr_3<- critical_mst_thr(leukemia %thr% critical_mst_thr(leukemia %thr% thr_1))
+#' p3<- greedyCliquePartitioner(leukemia %thr% thr_3)$membership
+#' cl3<- relax_cliques(p3, leukemia %thr% thr_3, relax_method="components", frac=0.95)
+#' print("ground truth discovery scores:")
+#' igraph::compare(p1, leukemia_clusters, "adjusted.rand") 
+#' igraph::compare(p3, leukemia_clusters, "adjusted.rand") 
+#' igraph::compare(cl3$node, leukemia_clusters, "adjusted.rand") 
+#' print("corresponding values of NN_DunnIndex")
+#' NN_DunnIndex(p1, max(leukemia) - leukemia)
+#' NN_DunnIndex(p3, max(leukemia) - leukemia)
+#' NN_DunnIndex(cl3$node, max(leukemia) - leukemia)
+#' @seealso [%thr%], [igraph::modularity()], [relax_cliques()], [critical_mst_thr()]
 #' @export
 
 
-MinST_DunnIndex<- function(partition, dS, outlier_mask=NULL) {
+NN_DunnIndex<- function(partition, dS, n_NN_inside=1, 
+				       n_NN_btw=2,
+					 outlier_mask=NULL) {
 	
 	stopifnot(length(partition)==ncol(dS))	
 	partition<- uniqueSingletonLabels(partition)
@@ -224,35 +284,36 @@ MinST_DunnIndex<- function(partition, dS, outlier_mask=NULL) {
 		if (length(tabulation$count)==1) {warning(" There is only one cluster in given partition.");
 						  return(NA) }
 		}
-	dS_mst<- igraph::mst(
-		 igraph::graph_from_adjacency_matrix(dS, weighted=TRUE, mode="undirected", diag=FALSE)
-		 )	
+	# distance to NN inside each group per node
 	labels<- unique(partition)
-	# if cluster is of size 1 then its diameter is 0
-	# case of all clusters size being 1 is excluded
-	# so max diameter will be = 0 if all clusters of size >=1 have 0 as min. NN distance
-	diameters=unlapply( labels, 
-			  function(label ) 
-				if (sum( partition==label)==1) 
-					return(0)
-				else
-				   max(igraph::E(
-				   igraph::subgraph(dS_mst,
-					vids=which(partition==label)
-				   )
-				   )$weight)
-			  )
+	groupPlacements<- unlapply(labels, function(x) partition==x)
+	groupSizes<- unlapply(groupPlacements, sum)
+	d_local_NNs<- unlapply(1:ncol(dS), function(j) 
+					 if ( groupSizes[[ which(labels==partition[[j]]) ]]==1 ) {
+						NA
+					} else { 
+			mean(	sort(dS[,j][ groupPlacements[[which(labels==partition[[j]])]] ] )[2: min(groupSizes[[j]],n_NN_inside) ] )
+				         }
+			       )
+	diameters<- unlapply( labels, 
+	#if cl is singleton then diam is 0 else its max d_local_NNs[group]
+	function(label) if(sum(partition==label)==1) return(0) else  max(d_local_NNs [ partition==label ])
+			    )
 	max_diam=max(diameters)
 	denom_is_0= (max_diam==0)
 	cluster_distances=vector()
 	for (i in seq_along(labels))
 		for (j in seq_along(labels))
-			if (i<j)
+			if (i<j) {
+				 dS[ partition== labels[[i]],  
 				cluster_distances[[length(cluster_distances) +1 ]]=min(
 				as.vector(dS[ partition== labels[[i]], partition==labels[[j]] ])
 										      )
+				}
 	min_c_dist= min(cluster_distances)
 	numer_is_0=(min_c_dist==0)
+	print(max_diam)
+	print(min_c_dist)
 	if (denom_is_0 && numer_is_0 ) return(0) else return (min_c_dist/max_diam)
 }
 
@@ -403,7 +464,7 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 #' are acting exactly the same as in [thr_optimizer()], but range of weights which is searched is that of `CS` matrix and scores are obtained by 
 #' evaluating `cs_thr_objective` on resulting partition and original node similarity `S`.
 #'
-#' `cs_thr_objective` can be a character string, then it can either be `modularity` (optimizing [igraph::modularity()]) or `mst` (optimizing [MinST_DunnIndex()], converting similarities to distances).
+#' `cs_thr_objective` can be a character string, then it can either be `modularity` (optimizing [igraph::modularity()]) or `nn` (optimizing [NN_DunnIndex()], converting similarities to distances).
 #' This argument can also be a function. Valid function here must accept node cluster membership vector as first argument and original node to node similarity matrix `S` as the second. Additional arguments can be passed by `...`. Return value should be scalar (the bigger the better grade).
 #' 
 #'  `relax_method`, `clq_importance` are passed to [relax_cliques()], see that function for description of these arguments.
@@ -470,9 +531,9 @@ relax_cliques_optimally<- function(partition,
 	#prepare objective function
 	if (class(cs_thr_objective)=="character")
 	{
-		if (!(cs_thr_objective %in% c("mst", "modularity")))
-			stop("if cs_thr_objective is a character string it has be either 'modularity' or 'mst'")
-	if (cs_thr_objective=="mst") cst_of= function(partition, S, ...) MinST_DunnIndex(partition, max(S) - S, ...)
+		if (!(cs_thr_objective %in% c("nn", "modularity")))
+			stop("if cs_thr_objective is a character string it has be either 'modularity' or 'nn'")
+	if (cs_thr_objective=="mst") cst_of= function(partition, S, ...) NN_DunnIndex(partition, max(S) - S, ...)
 	if (cs_thr_objective=="modularity") cst_of= function(partition, S, ...) igraph::modularity( 
        igraph::graph_from_adjacency_matrix(S, mode="undirected", 
 					   weighted=TRUE, diag=FALSE)	
