@@ -30,7 +30,7 @@ greedyCliqueJoin<- function(cS, clq_mem, clq_importances) {
 	clq_new_clust[new_core_label] = TRUE
 	#update cliq cluster membership, increment cluster label
 	n_clust=n_clust +1
-	clq_clust_mem[new_core_label]= n_clust
+	clq_clust_mem[clq_new_clust]= n_clust
 	#finally, mark new cluster as processed
 	clq_untouched[clq_new_clust] = FALSE	
 	}
@@ -130,7 +130,7 @@ cS_components<- function(cS, clq_mem) {
 #' table(cluster_membership$cliq)
 #' igraph::compare(cluster_membership$node, leukemia_clusters, 'adjusted.rand')
 #' heatmap(leukemia, Rowv=NA, Colv=NA, scale="none", main="original similarity matrix")
-#' heatmap(leukemia %thr% opt_thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
+#' heatmap(leukemia %thr% opt_$thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
 #' 
 #' #example 2: threshold selection by considering MST
 #' thr_1<- critical_mst_thr(leukemia)
@@ -197,12 +197,13 @@ relax_cliques<- function(partition,
 
 #objective functions for clique clustering threshold choice
 
-#' Calculate Dunn Index goodness of clustering variant based on kNN 
+#' Calculate Dunn Index goodness of clustering variant based on internal MST of clusters 
 #'
 #' For a given dissimilarity graph `dS` and partition of `dS` into 
 #' clusters, function will compute Dunn Index considering 
-#' average of weights of all edges between all k nearest neighbors of a pair of farthest/closest
-#' nodes located inside one cluster/in different clusters, see details.
+#' minimum spanning tree (MST) of each cluster to get diameter
+#' and optionally a Hausdorff distance for between cluster distances instead of 
+#' original single linkage distance, see details.
 #'
 #' @details
 #' In general, Dunn Index is defined as `min_between_cluster_distance/max_cluster_diameter` - the bigger
@@ -212,22 +213,26 @@ relax_cliques<- function(partition,
 #' with literature this function works with dissimilarities. Below by distance we mean dissimilarity.
 #' Dissimilarity can be derived from similarity matrix for example by `dS= max(S) - S`.
 #'
-#' For finding non-spherical clusters, this function computes `between_cluster_distance` 
-#' between clusters `i,j` as a minimum distance between any nodes inside clusters `i,j`.
-#' And `cluster_diameter` is defined as maximal nearest-neighbor distance in the cluster. 
+#' As first proposed by Dunn [ADD REFERENCE], `between_cluster_distance` 
+#' between clusters `i,j` as a minimum distance between any nodes inside clusters `i,j`, like in
+#' single linkage method of hierarchical clustering.
+#' If argument `dX.Y` is set to `"hausdorff"`, then `between_cluster_distance` changes to
+#' Hausdorff distance: 
+#' \itemize{
+#' \item `d_H(X,Y):= max ( max_x d(x,Y) , max_y d(y,X) )`
+#' \item where `X,Y` are clusters, `x` points in `X` and `y` points in `Y`,
+#' \item `d(x,Y):= min_y d(x,y)`.
+#' }
+#' This makes the index less influenced by few points of contact between clusters if in general they are 
+#' well separated.
 #'
-#' To reduce sensivity to the outliers, a paramater `k` is used to compute averages of distances in
-#' deriving diameters and between cluster distances.
+#' And `cluster_diameter` is defined here as maximum distance on MST of a cluster. 
+#' Such choices make the index suited for finding elongated clusters in which distances only between
+#' adjacent neighbors are small but distances between indirect neighbors are allowed ot be big.
 #'
-#' Mean kNN distance between nodes `g,h` in clusters `i,j` (`i` can be equal to `j`) is defined as:
-#` \itemize{
-#' \item `mean( weights of all edges between N_k(g) and N_k(h) )`
-#' \item where `N_k(g)` is set of `k` nearest neighbors of `g` in cluster `i`
-#' \item `N_k(h)` is set of `k` nearest neighbors of `h` in cluster `j`
-#'}
 #' Value of the index is undefined if there is only one cluster or all clusters are singletons, in that case 
-#' `NA` is returned. 
-#' For the case when maximum cluster diameter is 0 value of the index is infinity 
+#'  0 is returned by convention. 
+#' For the case when maximum cluster diameter is 0 value of the index is infinity. 
 #' and if also minimum between cluster distance is 0 then the function returns 0 (there are no differences
 #' between inter and intra cluster distances so a given clustering is not correct).
 #'
@@ -241,81 +246,98 @@ relax_cliques<- function(partition,
 #' goodness of the clustering one should calculate this based on dissimlarity derived from the unthresholded version
 #' of the graph.
 #'
-#' @param dS A dissimilarity matrix of nodes in the graph. The higher the `dS[i,j]` the more dissimilar nodes `i` and `j` are.
 #' @param partition A vector of membership labels of clusters of each node, 0 labels get converted to singleton labels by [cliquePartitioneR::uniqueSingletonLabels()]
+#' @param dS A dissimilarity matrix of nodes in the graph. The higher the `dS[i,j]` the more dissimilar nodes `i` and `j` are.
+#' @param dX.Y A character string specifying type of between cluster distance, see details.
 #' @param outlier_mask (experimental) if not null, if `outlier_mask[i]` is `TRUE` then node `i` is not included in the calculation, see details.
 #' @return A scalar value indicating the goodness of clustering, the bigger the better. Can be `Inf` if max cluster diameter is 0. If both `min_between_cluster_distance` and `max_cluster_diameter` are 0, function returns 0 by convention.
 #' @examples
-#' data(leukemia)
-#' data(leukemia_clusters)
-#' thr_1<- critical_mst_thr(leukemia)
-#' p1<- greedyCliquePartitioner(leukemia %thr% thr_1)$membership
-#' thr_3<- critical_mst_thr(leukemia %thr% critical_mst_thr(leukemia %thr% thr_1))
-#' p3<- greedyCliquePartitioner(leukemia %thr% thr_3)$membership
-#' cl3<- relax_cliques(p3, leukemia %thr% thr_3, relax_method="components", frac=0.95)
-#' print("ground truth discovery scores:")
-#' igraph::compare(p1, leukemia_clusters, "adjusted.rand") 
-#' igraph::compare(p3, leukemia_clusters, "adjusted.rand") 
-#' igraph::compare(cl3$node, leukemia_clusters, "adjusted.rand") 
-#' print("corresponding values of NN_DunnIndex")
-#' NN_DunnIndex(p1, max(leukemia) - leukemia)
-#' NN_DunnIndex(p3, max(leukemia) - leukemia)
-#' NN_DunnIndex(cl3$node, max(leukemia) - leukemia)
+#' library(magrittr)
+#' points<- matrix(rnorm(800*3), ncol=3)
+#' points<-points/sqrt(rowSums(points^2)) #unit sphere
+#' points[1:400,]= points[1:400,]*20 # outer
+#' points[401:800,]= points[401:800,]*0.5 #inner
+#' ref=rep(1,800); ref[401:800]=2 # reference labels for points
+#' plot(points, col=ifelse(ref>1,"red","blue"))
+#' dS<- as.matrix(dist(points))
+#' flip_<- function(M) max(M)- M #convert similarities to distances and vice versa
+#' dS %>% flip_() -> S
+#' thr<- critical_mst_thr(S)
+#' # first get cliques
+#' pa<- greedyCliquePartitioner(S %thr% thr)$membership
+#' #not perfect yet
+#' igraph::compare(pa, ref, "adjusted.rand")
+#' #corresponding dunn indices:
+#' MinST_DunnIndex(ref,dS) #reference
+#' MinST_DunnIndex(pa,dS) #cliques
+#' print("hausdorff:")
+#' MinST_DunnIndex(ref,dS, "hausdorff") #reference
+#' MinST_DunnIndex(pa,dS, "hausdorff") #cliques
+#' # clusters from clique relaxation
+#' relax_cliques(pa %>% uniqueSingletonLabels(), S %thr% thr, relax_method = "components")-> cl
+#' igraph::compare(ref, cl$node, "adjusted.rand")
+#' MinST_DunnIndex(cl$node,dS)
+#' MinST_DunnIndex(cl$node,dS,"hausdorff")
+#' #fine tune frac of kept edges between cliques, better score:
+#' relax_cliques(pa %>% uniqueSingletonLabels(), S %thr% thr, relax_method = "components", frac=0.1)-> cl
+#' igraph::compare(ref, cl$node, "adjusted.rand")
+#' #indexes are better
+#' MinST_DunnIndex(cl$node,dS)
+#' MinST_DunnIndex(cl$node,dS,"hausdorff")
 #' @seealso [%thr%], [igraph::modularity()], [relax_cliques()], [critical_mst_thr()]
+#' @importFrom magrittr %>%
 #' @export
 
-
-NN_DunnIndex<- function(partition, dS, n_NN_inside=1, 
-				       n_NN_btw=2,
-					 outlier_mask=NULL) {
-	
-	stopifnot(length(partition)==ncol(dS))	
-	partition<- uniqueSingletonLabels(partition)
-	if (!is.null(outlier_mask)) {
-		partition<- partition[!outlier_mask]; 
-		fastTable(partition)-> tabulation
-		if (all(tabulation$count==1)){ warning(" outlier_mask given makes all clusters singletons");
-						return(NA) }
-		if (length(tabulation$count)==1){ warning(" outlier_mask given results in one cluster remaining");
-						return(NA) }
-		dS<- dS[!outlier_mask, !outlier_mask] } else {
-		fastTable(partition)-> tabulation
-		if (all(tabulation$count==1)) { warning(" All clusters are singletons."); return(NA) }
-		if (length(tabulation$count)==1) {warning(" There is only one cluster in given partition.");
-						  return(NA) }
-		}
-	# distance to NN inside each group per node
-	labels<- unique(partition)
-	groupPlacements<- unlapply(labels, function(x) partition==x)
-	groupSizes<- unlapply(groupPlacements, sum)
-	d_local_NNs<- unlapply(1:ncol(dS), function(j) 
-					 if ( groupSizes[[ which(labels==partition[[j]]) ]]==1 ) {
-						NA
-					} else { 
-			mean(	sort(dS[,j][ groupPlacements[[which(labels==partition[[j]])]] ] )[2: min(groupSizes[[j]],n_NN_inside) ] )
-				         }
-			       )
-	diameters<- unlapply( labels, 
-	#if cl is singleton then diam is 0 else its max d_local_NNs[group]
-	function(label) if(sum(partition==label)==1) return(0) else  max(d_local_NNs [ partition==label ])
-			    )
-	max_diam=max(diameters)
-	denom_is_0= (max_diam==0)
-	cluster_distances=vector()
-	for (i in seq_along(labels))
-		for (j in seq_along(labels))
-			if (i<j) {
-				 dS[ partition== labels[[i]],  
-				cluster_distances[[length(cluster_distances) +1 ]]=min(
-				as.vector(dS[ partition== labels[[i]], partition==labels[[j]] ])
-										      )
-				}
-	min_c_dist= min(cluster_distances)
-	numer_is_0=(min_c_dist==0)
-	print(max_diam)
-	print(min_c_dist)
-	if (denom_is_0 && numer_is_0 ) return(0) else return (min_c_dist/max_diam)
+MinST_DunnIndex<-function(partition, dS,dX.Y="single_linkage", 
+			    hausdorff_q=1,
+			 outlier_mask=NULL){
+  stopifnot(length(partition)==ncol(dS))	
+  stopifnot(class(dX.Y)=="character")
+  stopifnot(dX.Y %in% c("single_linkage", "hausdorff"))
+  partition<- uniqueSingletonLabels(partition)
+  if (!is.null(outlier_mask)) dS<- dS[!outlier_mask, !outlier_mask] 
+  if (!is.null(outlier_mask)) partition<- partition[!outlier_mask ]
+  labels=unique(partition)
+  if (length(labels)==1) return(0)
+  placements = lapply(labels, function(x) partition==x)
+  lapply(placements, function(x) sum(x)) %>% unlist() -> sizes
+  if (all(sizes==1)) return(0)
+  lapply(seq_along(placements), function(i) 
+  { if(sizes[[i]]==1) return(0) else{
+        dS[placements[[i]],
+           placements[[i]]] %>% igr_() %>% igraph::mst() %>%
+            igraph::E() -> internal_skeleton
+            quantile((internal_skeleton)$weight,hausdorff_q)
+                                     }
+    }
+    ) %>% unlist() -> diameters
+   max_diam= max(diameters)
+   ij=0
+   distances<-vector()
+   for (i in seq_along(labels))
+     for (j in seq_along(labels))
+       if (i<j)
+     {ij=ij+1; 
+      if (dX.Y=="single_linkage")
+     dS[ placements[[i]], 
+         placements[[j]] ] %>% min() -> distances[[ij]] 
+      if (dX.Y=="hausdorff")
+      {
+        dS[ placements[[i]], 
+            placements[[j]], drop=FALSE ] %>% apply(2,min) -> dx.Y
+        dS[ placements[[i]], 
+            placements[[j]], drop=FALSE ] %>% apply(1, min)-> dy.X
+        c(quantile(dx.Y, hausdorff_q),
+	 quantile(dy.X, hausdorff_q)) %>% max() -> distances[[ij]]
+      }
+     
+       }
+   min_dist<-min(distances)
+   if ((max_diam==0) && (min_dist==0)) return(0)
+   min_dist/max_diam
 }
+
+
 
 
 exhaustive_relax_thr_search<- function( clq_mem, CS, n_divisions, 
@@ -347,15 +369,17 @@ exhaustive_relax_thr_search<- function( clq_mem, CS, n_divisions,
 	} 
 
 	max_idx<-which.max(Y_t)
-	if (max_idx==1) {l_t= X_t[[1]]; r_t=X_t[[2]] 
+	if (max_idx==1) {l_i= 1; r_i=2
 	} else if (max_idx== length(Y_t)) {
-	  l_t= X_t[[length(Y_t)-1]]
-	  r_t= X_t[[length(Y_t)]]
+	  l_i= length(Y_t)-1
+	  r_i= length(Y_t)
 	} else {
-	  l_t= X_t[[ max_idx -1]]
-	  r_t= X_t[[ max_idx +1]]
+	  l_i=  max_idx -1
+	  r_i=  max_idx +1
 	}
-	max_neighborhood= ord_CS_ltr[ (ord_CS_ltr >= l_t) & (ord_CS_ltr <= r_t) ]
+	print(c(X_t[[l_i]], X_t[[r_i]]))
+	max_neighborhood= c( X_t[[l_i]], ord_CS_ltr[ (ord_CS_ltr >= X_t[[l_i]]) & (ord_CS_ltr <= X_t[[r_i]]) ],
+			     X_t[[r_i]])
 	list( X_t= X_t, Y_t= Y_t, max_idx=max_idx, max_neighborhood= max_neighborhood, partitions=partitions)
 
 }
@@ -379,7 +403,7 @@ thr_rel_f<- function(frac, clq_mem,  CS, ordCS_ltr, clScoreFun, S,
 		relaxator_otherArgs 
 	  )
 		)$node-> clu
-	 clScoreFun(clu, ...) -> y_t
+	 clScoreFun(clu, S, ...) -> y_t
 		} else {
        r.s_IDX<-min( which(ordCS_ltr > t) )
        r.s<- ordCS_ltr[[r.s_IDX]]
@@ -394,7 +418,7 @@ thr_rel_f<- function(frac, clq_mem,  CS, ordCS_ltr, clScoreFun, S,
 		relaxator_otherArgs 
 	  )
 		)$node-> clu
-	 clScoreFun(clu, ...) -> y_l
+	 clScoreFun(clu, S, ...) -> y_l
 	#then for r.s
 	do.call(relax_cliques, 
 	c(	list( partition= clq_mem,
@@ -405,7 +429,7 @@ thr_rel_f<- function(frac, clq_mem,  CS, ordCS_ltr, clScoreFun, S,
 		relaxator_otherArgs 
 	  )
 		)$node-> clu
-	 clScoreFun(clu, ...) -> y_r
+	 clScoreFun(clu, S, ...) -> y_r
 	#then interpolate :)
        A= (y_r - y_l)/(r.s-l.s)
        b= y_l - A*l.s
@@ -425,12 +449,16 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 	rs= range(max_neighborhood)
 	l_t= rs[[1]]
 	r_t= rs[[2]]
-	opt_res= optimize( f= thr_rel_f, interval=c(l_t,r_t),maximum=TRUE,
-	clq_mem=clq_mem, CS=CS, ordCS_ltr=max_neighborhood, 
-	clScoreFun=clScoreFun, S=S, relax_method=relax_method,
-	relaxator_otherArgs=relaxator_otherArgs, tol=tol, ...)
-	list( opt_res=opt_res,
-	      partition= do.call(relax_cliques, 
+	if (l_t==r_t) {
+		opt_res=list()
+		opt_res$maximum= l_t
+			} else {
+		 opt_res= optimize( f= thr_rel_f, interval=c(l_t,r_t),maximum=TRUE,
+		 clq_mem=clq_mem, CS=CS, ordCS_ltr=max_neighborhood, 
+		 clScoreFun=clScoreFun, S=S, relax_method=relax_method,
+		 relaxator_otherArgs=relaxator_otherArgs, tol=tol, ...)
+				}
+	opt_pa= do.call(relax_cliques, 
 	c(	list( partition= clq_mem,
 		      SorCS=CS,
 		      frac=opt_res$maximum,
@@ -438,8 +466,10 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 		      relax_method=relax_method),
 		relaxator_otherArgs 
 	  )
-		)
-	  )
+		       )  
+	opt_res$objective= clScoreFun(opt_pa$node, S, ...) 
+	list( opt_res=opt_res,
+	      partition=opt_pa 	  )
 }
 
 #' Optimal clique relaxation by clique supergraph weight threshold optimization
@@ -464,7 +494,7 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 #' are acting exactly the same as in [thr_optimizer()], but range of weights which is searched is that of `CS` matrix and scores are obtained by 
 #' evaluating `cs_thr_objective` on resulting partition and original node similarity `S`.
 #'
-#' `cs_thr_objective` can be a character string, then it can either be `modularity` (optimizing [igraph::modularity()]) or `nn` (optimizing [NN_DunnIndex()], converting similarities to distances).
+#' `cs_thr_objective` can be a character string, then it can either be `modularity` (optimizing [igraph::modularity()]) or `mst` (optimizing [MinST_DunnIndex()], converting similarities to distances).
 #' This argument can also be a function. Valid function here must accept node cluster membership vector as first argument and original node to node similarity matrix `S` as the second. Additional arguments can be passed by `...`. Return value should be scalar (the bigger the better grade).
 #' 
 #'  `relax_method`, `clq_importance` are passed to [relax_cliques()], see that function for description of these arguments.
@@ -477,7 +507,8 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 #' If `CS` is not `NULL`, then it is assumed to be precomputed output of [cliqueSimilarity()] and `labelMap` is inherited from it.
 #'
 #' @param partition A clique membership indicator vector (of nodes), 0 denotes free nodes.
-#' @param S A node to node similarity matrix that was used to get `partition`
+#' @param S An original, non thresholded node similarity matrix
+#' @param t_S A threshold that was used on `S` to find `partition`
 #' @param CS A clique to clique similarity matrix (assumed to be computed by [cliqueSimilarity()]
 #' @param relax_method,clq_importance Clique relaxation specification, see [relax_cliques()]
 #' @param cs_thr_objective A character string specifying objective function to optimize when searching for threshold or an objective function, see details.
@@ -503,13 +534,30 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 #' (see details of [relax_cliques()] for meaning of `core`)
 #' 
 #' Attribute `labelMap` is set if non zero labels of cliques were not consecutive integers, see details. 
+#'
 #' @examples
-#' print("A")
+#' library(magrittr)
+#' data(leukemia)
+#' #example of not so good similarity threshold 
+#' #optimal clique relaxation tries to get most of it anyway
+#' opt_= list( thr=critical_mst_thr(leukemia) )
+#' opt_$maximizer_partition=greedyCliquePartitioner(leukemia %tht% opt_$thr)
+#' relax_cliques_optimally(opt_$maximizer_partition %>% uniqueSingletonLabels(), leukemia, opt_$thr,
+#'                         n_init_steps=2)-> relax_result #toy example,init steps to 2 to make prec. search useful
+#' data(leukemia_clusters) #to compare with discovered clusters
+#' igraph::compare(leukemia_clusters, relax_result$membership$node, "adjusted.rand")
+#' #plot the initial search history
+#' plot(relax_result$init_search_points, relax_result$init_scores, xlab="thresholds checked in initial search",
+#' ylab="objective function value", type="p", pch=16)
+#' # mark the result of precision search also
+#' abline(v=relax_result$frac)
+#' abline(h=relax_result$objective)
 #' @export
 
 
 relax_cliques_optimally<- function(partition,
 			  S,
+			  t_S,
 			  CS=NULL,
 			  relax_method="greedyCliqueJoin",
 			  clq_importance=NULL,
@@ -531,19 +579,20 @@ relax_cliques_optimally<- function(partition,
 	#prepare objective function
 	if (class(cs_thr_objective)=="character")
 	{
-		if (!(cs_thr_objective %in% c("nn", "modularity")))
-			stop("if cs_thr_objective is a character string it has be either 'modularity' or 'nn'")
-	if (cs_thr_objective=="mst") cst_of= function(partition, S, ...) NN_DunnIndex(partition, max(S) - S, ...)
-	if (cs_thr_objective=="modularity") cst_of= function(partition, S, ...) igraph::modularity( 
-       igraph::graph_from_adjacency_matrix(S, mode="undirected", 
-					   weighted=TRUE, diag=FALSE)	
-	, partition, directed=FALSE, ...) 
+		if (!(cs_thr_objective %in% c("mst", "modularity")))
+			stop("if cs_thr_objective is a character string it has be either 'modularity' or 'mst'")
+	if (cs_thr_objective=="mst") cst_of= function(partition, S, ...) MinST_DunnIndex(partition, max(S) - S, ...)
+	if (cs_thr_objective=="modularity") cst_of= function(partition, S, ...) {
+	igr_(S)-> gS	
+	igraph::modularity( gS 
+	, partition, directed=FALSE, weight=igraph::E(gS)$weight,, ...) 
+										}
 	}
 	if (class(cs_thr_objective)=='function') cst_of=cs_thr_objective
 
 	#prepare CS 
 
-	if (is.null(CS))  CS= cliqueSimilarity(partition, S)
+	if (is.null(CS))  CS= cliqueSimilarity(partition, S %thr% t_S)
 	#relabel if required
 	if (!is.null(attr(CS,"labelMap")))
 	{
@@ -555,11 +604,15 @@ relax_cliques_optimally<- function(partition,
 	}
 	
 	if (class(relax_method)=="character")  {
-		if (relax_method=="greedyCliqueJoin")
+		if (relax_method=="greedyCliqueJoin") {
 			relaxator_otherArgs=list( clq_importance= clq_importance)   } else relaxator_otherArgs=NULL
+						}
 
 	#initial exhaustive search	
 	if (exh) {
+	#print("CS range:")
+	#rs<-range(CS)
+	#print(seq(rs[[1]], rs[[2]], length.out=n_init_steps))
 	stopifnot(n_init_steps>1)
 exhaustive_relax_thr_search( clq_mem=partition, CS=CS, 
 			    n_divisions=n_init_steps, 
@@ -567,16 +620,24 @@ exhaustive_relax_thr_search( clq_mem=partition, CS=CS,
 			     relax_method=relax_method,
 			     relaxator_otherArgs = relaxator_otherArgs,
 					...)->init_search 
+	plot(init_search$X_t, init_search$Y_t)
 	}
 	if (precis) {
 	#precise search
-	if (exh) maxNeigh= init_search$max_neighborhood else maxNeigh=range(S)
+	if (exh) maxNeigh= init_search$max_neighborhood else maxNeigh=range(CS)
+	print("maxNeigh:")
+	print(maxNeigh)
 	precision_relax_thr_search(max_neighborhood=maxNeigh, 
-				  clq_mem=clq_mem, CS=CS, 
+				  clq_mem=partition, CS=CS, 
 				clScoreFun=cst_of, S=S, 
 					relax_method=relax_method,
 			relaxator_otherArgs=relaxator_otherArgs, 
 			tol=tol, ...)-> prec_search 	
+	if (exh)  #sometimes prec search fails
+		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$maximum)
+			{prec_search$opt_res$maximum= init_search$X_t[[ init_search$max_idx ]]
+			 prec_search$opt_res$objective=init_search$Y_t[[ init_search$max_idx ]]	
+			}
 	}
 	
 	optimization_result<- list()

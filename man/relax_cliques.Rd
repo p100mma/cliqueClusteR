@@ -83,7 +83,7 @@ table(cluster_membership$node)
 table(cluster_membership$cliq)
 igraph::compare(cluster_membership$node, leukemia_clusters, 'adjusted.rand')
 heatmap(leukemia, Rowv=NA, Colv=NA, scale="none", main="original similarity matrix")
-heatmap(leukemia \%thr\% opt_thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
+heatmap(leukemia \%thr\% opt_$thr, Rowv=NA, Colv=NA, scale="none", main="similarity thresholded by optimizing complexity")
 
 #example 2: threshold selection by considering MST
 thr_1<- critical_mst_thr(leukemia)

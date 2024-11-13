@@ -75,7 +75,7 @@ grid_search_exhaustive<- function( S, n_divisions, clScoreFun,
 	  l_t= X_t[[ max_idx -1]]
 	  r_t= X_t[[ max_idx +1]]
 	}
-	max_neighborhood= ord_S_ltr[ (ord_S_ltr >= l_t) & (ord_S_ltr <= r_t) ]
+	max_neighborhood= c( l_t, ord_S_ltr[ (ord_S_ltr >= l_t) & (ord_S_ltr <= r_t) ], r_t )
 	list( X_t= X_t, Y_t= Y_t, max_idx=max_idx, max_neighborhood= max_neighborhood, partitions=partitions)
 	}
 
@@ -86,11 +86,18 @@ precision_search_piecewiseLinear<- function(max_neighborhood, S, clScoreFun,
 	rs= range(max_neighborhood)
 	l_t= rs[[1]]
 	r_t= rs[[2]]
-	opt_res=optimize(f = thr_cl_f, interval=c(l_t, r_t), maximum = TRUE,
-         S=S, ordS_ltr= max_neighborhood, partitioner= partitioner, partitioner_otherArgs=partitioner_otherArgs, clScoreFun=clScoreFun, tol=tol, ...)
+	if (l_t==r_t) {
+		opt_res=list()
+		opt_res$maximum= l_t
+			} else {
+		opt_res=optimize(f = thr_cl_f, interval=c(l_t, r_t), maximum = TRUE,
+		 S=S, ordS_ltr= max_neighborhood, partitioner= partitioner, partitioner_otherArgs=partitioner_otherArgs, clScoreFun=clScoreFun, tol=tol, ...)
+				}
 	S[ S< opt_res$maximum ] =0
+       	opt_pa=do.call(partitioner, c(list(S), partitioner_otherArgs))$membership
+	opt_res$objective= clScoreFun(opt_pa,...)
 	list(opt_res=opt_res,
-       	     partition=do.call(partitioner, c(list(S), partitioner_otherArgs))$membership
+	     partition=opt_pa
 	     )
 }
 
@@ -309,6 +316,11 @@ thr_optimizer<- function( S, expansion_mode="basic", cl_score="complexity",
 					tol=tol,
 					...
 					)-> prec_search 
+	if (exh)  #sometimes prec search fails
+		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$maximum)
+			{prec_search$opt_res$maximum= init_search$X_t[[ init_search$max_idx ]]
+			 prec_search$opt_res$objective=init_search$Y_t[[ init_search$max_idx ]]	
+			}
 
 	}
 	

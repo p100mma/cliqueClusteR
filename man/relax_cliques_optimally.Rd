@@ -7,6 +7,7 @@
 relax_cliques_optimally(
   partition,
   S,
+  t_S,
   CS = NULL,
   relax_method = "greedyCliqueJoin",
   clq_importance = NULL,
@@ -22,7 +23,9 @@ relax_cliques_optimally(
 \arguments{
 \item{partition}{A clique membership indicator vector (of nodes), 0 denotes free nodes.}
 
-\item{S}{A node to node similarity matrix that was used to get \code{partition}}
+\item{S}{An original, non thresholded node similarity matrix}
+
+\item{t_S}{A threshold that was used on \code{S} to find \code{partition}}
 
 \item{CS}{A clique to clique similarity matrix (assumed to be computed by \code{\link[=cliqueSimilarity]{cliqueSimilarity()}}}
 
@@ -75,7 +78,7 @@ So the search is performed in two steps like in \code{\link[=thr_optimizer]{thr_
 are acting exactly the same as in \code{\link[=thr_optimizer]{thr_optimizer()}}, but range of weights which is searched is that of \code{CS} matrix and scores are obtained by
 evaluating \code{cs_thr_objective} on resulting partition and original node similarity \code{S}.
 
-\code{cs_thr_objective} can be a character string, then it can either be \code{modularity} (optimizing \code{\link[igraph:modularity.igraph]{igraph::modularity()}}) or \code{nn} (optimizing \code{\link[=NN_DunnIndex]{NN_DunnIndex()}}, converting similarities to distances).
+\code{cs_thr_objective} can be a character string, then it can either be \code{modularity} (optimizing \code{\link[igraph:modularity.igraph]{igraph::modularity()}}) or \code{mst} (optimizing \code{\link[=MinST_DunnIndex]{MinST_DunnIndex()}}, converting similarities to distances).
 This argument can also be a function. Valid function here must accept node cluster membership vector as first argument and original node to node similarity matrix \code{S} as the second. Additional arguments can be passed by \code{...}. Return value should be scalar (the bigger the better grade).
 
 \code{relax_method}, \code{clq_importance} are passed to \code{\link[=relax_cliques]{relax_cliques()}}, see that function for description of these arguments.
@@ -88,5 +91,20 @@ Result of relabeling is stored in the attribute \code{labelMap} (if it was neede
 If \code{CS} is not \code{NULL}, then it is assumed to be precomputed output of \code{\link[=cliqueSimilarity]{cliqueSimilarity()}} and \code{labelMap} is inherited from it.
 }
 \examples{
-print("A")
+library(magrittr)
+data(leukemia)
+#example of not so good similarity threshold 
+#optimal clique relaxation tries to get most of it anyway
+opt_= list( thr=critical_mst_thr(leukemia) )
+opt_$maximizer_partition=greedyCliquePartitioner(leukemia \%tht\% opt_$thr)
+relax_cliques_optimally(opt_$maximizer_partition \%>\% uniqueSingletonLabels(), leukemia, opt_$thr,
+                        n_init_steps=2)-> relax_result #toy example,init steps to 2 to make prec. search useful
+data(leukemia_clusters) #to compare with discovered clusters
+igraph::compare(leukemia_clusters, relax_result$membership$node, "adjusted.rand")
+#plot the initial search history
+plot(relax_result$init_search_points, relax_result$init_scores, xlab="thresholds checked in initial search",
+ylab="objective function value", type="p", pch=16)
+# mark the result of precision search also
+abline(v=relax_result$frac)
+abline(h=relax_result$objective)
 }

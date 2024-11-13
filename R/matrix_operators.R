@@ -43,3 +43,17 @@ ltr_<-function(M) M[lower.tri(M)]
 igr_<-function(W) igraph::graph_from_adjacency_matrix( W, mode="undirected", weighted=TRUE, diag=FALSE)
 
 
+#' Convert simmilarities to dissimilarities and vice versa
+#'
+#' Each entry of matrix `M[i,j]` in the output gets replaced by `max(M) - M[i,j]`
+#'
+#' @param W Numeric matrix
+#' @return A numeric matrix "flipped" over its maximum
+#' @examples
+#' library(magrittr)
+#' data(leukemia)
+#' leukemia[1:4,1:4]
+#' leukemia[1:4,1:4] %>% flip_()
+#' @export
+
+flip_<-function(W) max(W) - W
