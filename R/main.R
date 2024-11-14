@@ -13,7 +13,7 @@
 #' @param expansion_mode A clique partitioning strategy to use, see [cliquePartitioneR::greedyCliquePartitioner()].
 #' @param t_S_init_steps,t_S_keep_init_eval_history,t_S_keep_init_partitions,t_S_precis,t_S_tol Passed to [thr_optimizer()] if t_S is set to one of `"complexity","n_cliques"`. These parameters control threshold optimization process for similarity matrix `S`, see [thr_optimizer()] for in depth description.
 #' @param t_CS_relax_method Character string specifying clique relaxation method to use, see [relax_cliques()].
-#' @param t_CS_cs_thr_objective,t_CS_n_init_steps,t_CS_keep_init_eval_history,t_CS_keep_init_partitions,t_CS_precis,t_CS_tol  Passed to [relax_cliques_optimally()] if `t_CS` is set to one of `"mst","modularity"`. These parameters control threshold optimization process for clique similarity matrix `CS`, see [relax_cliques_optimally()] for in depth description.
+#' @param t_CS_n_init_steps,t_CS_keep_init_eval_history,t_CS_keep_init_partitions,t_CS_precis,t_CS_tol  Passed to [relax_cliques_optimally()] if `t_CS` is set to one of `"mst","modularity"`. These parameters control threshold optimization process for clique similarity matrix `CS`, see [relax_cliques_optimally()] for in depth description.
 #' @return A named list with the following components: 
 #' \itemize{
 #' \item `clique_membership` A clique membership vector of nodes. Singletons are given unique labels.
@@ -48,7 +48,6 @@ run_scpcss<- function(XorS,
 		     t_S_precis=TRUE,
 		     t_S_tol=0.1, 
 		     t_CS_relax_method="greedyCliqueJoin",
-		     t_CS_cs_thr_objective="modularity",
 		     t_CS_n_init_steps=10,
 		     t_CS_keep_init_eval_history=TRUE,
 		     t_CS_keep_init_partitions=FALSE,
@@ -62,18 +61,17 @@ run_scpcss<- function(XorS,
 		
 	#case I: X is given
 	if ((nrow(XorS)!= ncol(XorS)) && (is.null(X_simil_fun)))
-		stop("if XorS is not square matrix then \n
-		      it is assumed its coordinate matrix of objects,
-		      and X_simil_fun must be given")
+		stop(paste0("if XorS is not square matrix then\n",
+		      "it is assumed its coordinate matrix of objects,",
+		      "and X_simil_fun must be given"))
 
 	stopifnot(class(t_S) %in% c("character", "function","numeric"))	
 	stopifnot(class(t_CS) %in% c("character","numeric"))	
 	
 	if (class(t_S)=="character")
 		if(!(t_S %in% c("mst", "complexity", "n_cliques")))
-			stop("If t_S is a character string it has to be
-			       one of:\n
-				'mst','complexity','n_cliques'")
+			stop(paste0("If t_S is a character string it has to be one of:\n",
+				"'mst','complexity','n_cliques'"))
 	
 	if (class(t_CS)=="character")
 		if (!(t_CS %in% c("mst", "modularity")))
@@ -108,9 +106,10 @@ run_scpcss<- function(XorS,
 	   X_simil_fun(XorS)-> S
 	  }
 
+	} else {
+	S=XorS; 
 	}
-	
-	S=XorS; rm(XorS)
+	 rm(XorS)
 	thr_optimizer_ran=FALSE	
 	if (class(t_S)== "character"){
 		if (t_S=="mst") { 
@@ -146,14 +145,14 @@ run_scpcss<- function(XorS,
 	Pa= tidyUpLabels(uniqueSingletonLabels(Pa))
 	# clique similarity (CS) matrix
 	CS<-cliqueSimilarity(cl_mem= Pa, WorA= S_t)
+	relax_optimalization_done=FALSE
 
 	if (class(t_CS)=="numeric") {
 		C_i<-relax_cliques(partition=Pa, 
 			      SorCS=CS,
 			      frac=t_CS,
 			      CS_given=TRUE,
-			      relax_method=t_CS_relax_method,
-			      clq_importance=t_CS_clq_importance) 
+			      relax_method=t_CS_relax_method)
 	 } else if (class(t_CS)=="character") {
 		relax_cliques_optimally(partition=Pa,
 					S=S,
@@ -161,7 +160,7 @@ run_scpcss<- function(XorS,
 					CS=CS,
 					relax_method=t_CS_relax_method,
 					#clq_importance=t_CS_clq_importance,
-					cs_thr_objective=t_CS_cs_thr_objective,
+					cs_thr_objective=t_CS,
 					n_init_steps=t_CS_n_init_steps,
 					keep_init_eval_history=t_CS_keep_init_eval_history,
 					keep_init_partitions=t_CS_keep_init_partitions,
@@ -197,9 +196,9 @@ run_scpcss<- function(XorS,
 
 	if (relax_optimalization_done) {
 		 result$t_CS_objective= t_CSopt$objective
-		if( (!is.null(t_CS_init_steps)) && t_CS_keep_init_partitions )
+		if( (!is.null(t_CS_n_init_steps)) && t_CS_keep_init_partitions )
 			result$t_CS_init_partitions= t_CSopt$init_partitions
-		if( (!is.null(t_CS_init_steps)) && t_CS_keep_init_eval_history) {
+		if( (!is.null(t_CS_n_init_steps)) && t_CS_keep_init_eval_history) {
 			result$t_CS_init_search_points= t_CSopt$init_search_points
 			result$t_CS_init_scores = t_CSopt$init_scores
 	}

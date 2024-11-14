@@ -18,7 +18,6 @@ run_scpcss(
   t_S_precis = TRUE,
   t_S_tol = 0.1,
   t_CS_relax_method = "greedyCliqueJoin",
-  t_CS_cs_thr_objective = "modularity",
   t_CS_n_init_steps = 10,
   t_CS_keep_init_eval_history = TRUE,
   t_CS_keep_init_partitions = FALSE,
@@ -43,7 +42,7 @@ run_scpcss(
 
 \item{t_CS_relax_method}{Character string specifying clique relaxation method to use, see \code{\link[=relax_cliques]{relax_cliques()}}.}
 
-\item{t_CS_cs_thr_objective, t_CS_n_init_steps, t_CS_keep_init_eval_history, t_CS_keep_init_partitions, t_CS_precis, t_CS_tol}{Passed to \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} if \code{t_CS} is set to one of \verb{"mst","modularity"}. These parameters control threshold optimization process for clique similarity matrix \code{CS}, see \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} for in depth description.}
+\item{t_CS_n_init_steps, t_CS_keep_init_eval_history, t_CS_keep_init_partitions, t_CS_precis, t_CS_tol}{Passed to \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} if \code{t_CS} is set to one of \verb{"mst","modularity"}. These parameters control threshold optimization process for clique similarity matrix \code{CS}, see \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} for in depth description.}
 }
 \value{
 A named list with the following components:
@@ -53,8 +52,8 @@ A named list with the following components:
 \item \code{t_CS} A numerical value of threshold used on clique similarity matrix in clique relaxation process.
 \item \code{cluster_membership} A sublist of 2 elements, each giving a kind of membership vector:
 \itemize{
-\code{cliq} gives cluster labes to which cliques belong
-\code{node} gives cluster labels to which nodes belong (cluster of node \code{i} is the cluster of clique in which \code{i} is situated)
+\item \code{cliq} gives cluster labes to which cliques belong
+\item \code{node} gives cluster labels to which nodes belong (cluster of node \code{i} is the cluster of clique in which \code{i} is situated)
 }
 \item \code{S} A symmetic matrix of node similarities used (non thresholded, set if \code{return_S} was \code{TRUE})
 \item \code{t_S_objective} A value of objective function obtained for final used \code{t_S} (set if threshold optimization of matrix \code{S} was done)
