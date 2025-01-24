@@ -57,3 +57,48 @@ igr_<-function(W) igraph::graph_from_adjacency_matrix( W, mode="undirected", wei
 #' @export
 
 flip_<-function(W) max(W) - W
+
+#' Index both rows and columns of a matrix
+#'
+#' @param W Numeric matrix
+#' @param idx vector of indexes or logical mask
+#' @return `W[idx,idx]`
+#' @export
+
+`%[%`<-function(W,idx) W[idx,idx, drop=FALSE]
+
+#' Calculate outer degree of the cluster in network based ow weight matrix
+#' 
+#' @param W Numeric matrix
+#' @param mask logical mask
+#' @return `sum(W[mask, !mask])` 
+
+`%odeg%`<- function(W,mask) sum(W[mask, !mask])
+
+#' Calculate mean outer degree of the cluster in network based ow weight matrix
+#' 
+#' @param W Numeric matrix
+#' @param mask logical mask
+#' @return `sum(W[mask, !mask])/sum(mask)` 
+
+`%modeg%`<- function(W,mask) sum(W[mask, !mask])/sum(mask)
+
+#' Calculate inner degree of the cluster in network based ow weight matrix
+
+#' 
+#' @param W Numeric matrix
+#' @param mask logical mask
+#' @return `sum(W[mask, mask])` 
+
+`%ideg%`<- function(W,mask) sum(W[mask, mask])
+
+#' Calculate mean inner degree of the cluster in network based ow weight matrix
+
+#' @param W Numeric matrix
+#' @param mask logical mask
+#' @return `sum(W[mask, mask])/sum(mask)` 
+
+`%mideg%`<- function(W,mask) sum(W[mask, mask])/sum(mask)
+
+
+`%modularity%` <- function(S, partition) {s_gr<-S %>% igr_(); igraph::modularity(s_gr, membership=partition, weights= igraph::E(s_gr)$weight) }

@@ -13,7 +13,7 @@
 #' @param expansion_mode A clique partitioning strategy to use, see [cliquePartitioneR::greedyCliquePartitioner()].
 #' @param t_S_init_steps,t_S_keep_init_eval_history,t_S_keep_init_partitions,t_S_precis,t_S_tol Passed to [thr_optimizer()] if t_S is set to one of `"complexity","n_cliques"`. These parameters control threshold optimization process for similarity matrix `S`, see [thr_optimizer()] for in depth description.
 #' @param t_CS_relax_method Character string specifying clique relaxation method to use, see [relax_cliques()].
-#' @param t_CS_n_init_steps,t_CS_keep_init_eval_history,t_CS_keep_init_partitions,t_CS_precis,t_CS_tol  Passed to [relax_cliques_optimally()] if `t_CS` is set to one of `"mst","modularity"`. These parameters control threshold optimization process for clique similarity matrix `CS`, see [relax_cliques_optimally()] for in depth description.
+#' @param t_CS_n_init_steps,t_CS_keep_init_eval_history,t_CS_keep_init_partitions,t_CS_precis,t_CS_tol,t_CS_dX.Y  Passed to [relax_cliques_optimally()] if `t_CS` is set to one of `"mst","modularity"`. These parameters control threshold optimization process for clique similarity matrix `CS`, see [relax_cliques_optimally()] for in depth description.
 #' @return A named list with the following components: 
 #' \itemize{
 #' \item `clique_membership` A clique membership vector of nodes. Singletons are given unique labels.
@@ -52,7 +52,10 @@ run_scpcss<- function(XorS,
 		     t_CS_keep_init_eval_history=TRUE,
 		     t_CS_keep_init_partitions=FALSE,
 		     t_CS_precis=TRUE,
-		     t_CS_tol=0.1) {
+		     t_CS_tol=0.1,
+		     t_CS_dX.Y="hausdorff",
+		     do_signif=FALSE,
+		     lvl=0.05) {
 
 	stopifnot(length(dim(XorS))==2)
 	stopifnot(!is.null(ncol(XorS)))
@@ -144,7 +147,7 @@ run_scpcss<- function(XorS,
 	# + relabel to consecutive integers just in case
 	Pa= tidyUpLabels(uniqueSingletonLabels(Pa))
 	# clique similarity (CS) matrix
-	CS<-cliqueSimilarity(cl_mem= Pa, WorA= S_t)
+	CS<-cliqueSimilarity(cl_mem= Pa, WorA= S_t, do_signif=do_signif, lvl=lvl)
 	relax_optimalization_done=FALSE
 
 	if (class(t_CS)=="numeric") {
@@ -154,6 +157,22 @@ run_scpcss<- function(XorS,
 			      CS_given=TRUE,
 			      relax_method=t_CS_relax_method)
 	 } else if (class(t_CS)=="character") {
+		if (t_CS=="mst")
+		relax_cliques_optimally(partition=Pa,
+					S=S,
+					t_S=t_S,
+					CS=CS,
+					relax_method=t_CS_relax_method,
+					#clq_importance=t_CS_clq_importance,
+					cs_thr_objective=t_CS,
+					n_init_steps=t_CS_n_init_steps,
+					keep_init_eval_history=t_CS_keep_init_eval_history,
+					keep_init_partitions=t_CS_keep_init_partitions,
+					precis=t_CS_precis,
+					tol=t_CS_tol,
+					dX.Y=t_CS_dX.Y
+					) -> t_CSopt
+		else
 		relax_cliques_optimally(partition=Pa,
 					S=S,
 					t_S=t_S,

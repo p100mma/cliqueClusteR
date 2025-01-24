@@ -10,7 +10,9 @@ relax_cliques(
   frac = 0.5,
   CS_given = FALSE,
   relax_method = "greedyCliqueJoin",
-  clq_importance = NULL
+  clq_importance = NULL,
+  do_signif = FALSE,
+  lvl = 0.05
 )
 }
 \arguments{

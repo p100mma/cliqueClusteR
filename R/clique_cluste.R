@@ -13,6 +13,16 @@ unlapply<- function(...) unlist(lapply(...))
 #	clust_mem$cliq- cluster labels of each clique
 #	core$cliq- indicator if clique is a core clique
 #	core$node- indicator if node belongs to a core clique
+
+
+
+covers_sNN<- function(cS) {
+cover_indicators<- cS > 0 
+diag(cover_indicators)<- 0
+t(cover_indicators) %*% cover_indicators
+}
+
+
 greedyCliqueJoin<- function(cS, clq_mem, clq_importances) {
 	clq_untouched=rep(TRUE, nrow(cS))
 	clq_isCore=rep(FALSE, nrow(cS))
@@ -34,6 +44,173 @@ greedyCliqueJoin<- function(cS, clq_mem, clq_importances) {
 	#finally, mark new cluster as processed
 	clq_untouched[clq_new_clust] = FALSE	
 	}
+	
+	#find the strongest pull of each clique to each cluster
+clust_indicators<- matrix(nrow=ncol(cS), ncol=n_clust)
+for ( i in 1:n_clust) clust_indicators[,i] = (clq_clust_mem==i)*1.
+# c x c times c x cl -> c x cl
+cS %*% clust_indicators %>% apply(1, which.max) -> attractor_label
+#check which clique have strongest pull elsewhere and are not themselves cores
+clustSizes<- colSums(clust_indicators)
+sizeOfClustPerClq<- lapply(clq_clust_mem, function(k) clustSizes[[k]] ) %>% unlist()
+pulled_on_cliques <- which( (clq_clust_mem!=attractor_label) &
+			     (sizeOfClustPerClq>1)  &(!clq_isCore)
+					)
+n_swaps=0
+while(length(pulled_on_cliques))
+{
+
+#calculate local gain on a swap 
+lapply(pulled_on_cliques, function(i)
+	{ old_label=clq_clust_mem[i]
+	  hypothetical = clq_clust_mem	
+	  new_label= attractor_label[i]
+	  hypothetical[i] = new_label
+	   cl1<-(clq_clust_mem==new_label)
+	   cl2<-(clq_clust_mem==old_label)
+	   hcl1<-(hypothetical==new_label)
+            hcl2<-(hypothetical==old_label)
+	  old_cl1_coef<- (cS %ideg% cl1)/(cS %odeg% cl2)
+	  old_cl2_coef<- (cS %ideg% cl2)/(cS %odeg% cl2)
+	  new_cl1_coef<- (cS %ideg% hcl1)/(cS %odeg% hcl1)
+	  new_cl2_coef<- (cS %ideg% hcl2)/(cS %odeg% hcl2)
+	  might_swap = (old_cl1_coef < new_cl1_coef) && (old_cl2_coef < new_cl2_coef)
+	  ifelse(might_swap,
+		 (new_cl1_coef - old_cl1_coef) + (-old_cl2_coef + new_cl2_coef),
+		-9999)
+	}
+	) %>% unlist() -> swap_gains
+if (all(swap_gains <=0 )) pulled_on_cliques<- c() else {
+	 n_swaps=n_swaps+1
+	 swap_to_do<- pulled_on_cliques [which.max(swap_gains)]
+	 new_label <- attractor_label[ swap_to_do ]
+	 clq_clust_mem[ swap_to_do ] = new_label  
+	 clust_indicators<- matrix(nrow=ncol(cS), ncol=n_clust)
+	 for ( i in 1:n_clust) clust_indicators[,i] = (clq_clust_mem==i)*1.
+	 # c x c times c x cl -> c x cl
+	 cS %*% clust_indicators %>% apply(1, which.max) -> attractor_label
+	 sizeOfClustPerClq<- lapply(clq_clust_mem, function(k) clustSizes[[k]] ) %>% unlist()
+	 #check which clique have strongest pull elsewhere and are not themselves cores
+	 pulled_on_cliques <- which( (clq_clust_mem!=attractor_label) &
+			     (sizeOfClustPerClq>1) & (!clq_isCore)
+						 )
+	}
+#print(length(pulled_on_cliques))
+}
+print("n_swaps made:")
+print(n_swaps)
+# examine joins of clusters of size >1
+#	 is [mean_in_degree/mean_out_degree ](joined) > [mean_in_degree/mean_out_degree] (both separate?)
+	#cluster 2 cluster pull
+	t(clust_indicators) %*% cS %*% clust_indicators -> cl2cl
+	#pull inside clusters
+	diag(cl2cl)-> cl2in
+	cl2out<- cl2cl; diag(cl2out)<-0; 
+	#cluster with highest aggregate connection strength to the cluster [[k]]
+	attractor_label<- apply(cl2out,2, function(neigh) which.max(neigh) )
+	#strength of that pull
+	cl2out<- lapply(1:ncol(cl2out), function(k) cl2cl[k, attractor_label[[k]]] ) %>% unlist()
+	clSizes<- colSums(clust_indicators)
+	pulled_clusters<- which( (cl2in < cl2out) & (clSizes>1) )
+	n_merges=0
+	while (any(pulled_clusters)){
+	lapply(pulled_clusters, 
+		function(i)
+		{ 
+		  old_label=i
+		  new_label= attractor_label[i]
+		  hypothetical = clq_clust_mem	
+		  hypothetical[clq_clust_mem==i] = new_label
+		  #old clusters cl1 and cl2
+		  cl1<- clq_clust_mem==old_label
+		  cl2<- clq_clust_mem==new_label
+		  #hypothetical cluster after merging cl1 and cl2
+		  hcl<- hypothetical==new_label 
+		  old_cl1_coef<- (cS %ideg%  cl1)/(cS %odeg% cl1) 
+		  old_cl2_coef<- (cS %ideg%  cl2)/(cS %odeg% cl2) 
+		  hcl_coef<- (cS %ideg% hcl)/(cS %odeg% hcl) 
+	  	  might_merge = (old_cl1_coef < hcl_coef) && (old_cl2_coef < hcl_coef)
+		  ifelse(might_merge,
+			hcl_coef - mean(c(old_cl1_coef, old_cl2_coef)),
+			-9999	
+			)
+			}
+	      ) %>% unlist() -> merge_gains
+	if (all(merge_gains <= 0)) pulled_clusters= c() else  {
+	n_merges=n_merges+1
+	 merge_to_do<- pulled_clusters [which.max(merge_gains)]
+	 new_label <- attractor_label[ merge_to_do ]
+	 clq_clust_mem[ clq_clust_mem==merge_to_do ] = new_label  
+	 clust_indicators<- matrix(nrow=ncol(cS), ncol=n_clust)
+	 for ( i in 1:n_clust) clust_indicators[,i] = (clq_clust_mem==i)*1.
+	 # c x c times c x cl -> c x cl
+	 t(clust_indicators) %*% cS %*% clust_indicators -> cl2cl
+	 #pull inside clusters
+	 diag(cl2cl)-> cl2in
+	 cl2out<- cl2cl; diag(cl2out)<-0; 
+	 #cluster with highest aggregate connection strength to the cluster [[k]]
+	 attractor_label<- apply(cl2out,2, function(neigh) which.max(neigh) )
+	 #strength of that pull
+	 cl2out<- lapply(1:ncol(cl2out), function(k) cl2cl[k, attractor_label[[k]]] ) %>% unlist()
+	 clSizes<- colSums(clust_indicators)
+	 pulled_clusters<- which( (cl2in < cl2out) & (clSizes>1) )
+
+		}
+
+	}
+	print("n merges made:")
+	print(n_merges)
+			
+#	# check if single core merges improve the out deg min deg coefficients
+#	clq_size_of_cluster<- lapply(1:nrow(cS), function(i) sum(clq_clust_mem==i)) %>% unlist() 	
+#	isolated_cores<- which(clq_isCore & (clq_size_of_cluster==1))
+#	clust_indicators<- matrix(nrow=nrow(cS), ncol=n_clust)
+#	for ( i in 1:n_clust) clust_indicators[,i] = (clq_clust_mem==i)*1.
+#	#we dont want to count contribution of j to itself
+#	for ( j in isolated_cores) clust_indicators[j, clq_clust_mem[j] ]= 0
+#	# i x c times c x cl -> i x cl
+#	cS[isolated_cores,,drop=FALSE] %*% clust_indicators %>% apply(1, function(x) ifelse(max(x)>0, which.max(x),-999 )) -> attractor_label
+#	pulled_cores<- isolated_cores[ attractor_label>0 ]
+#	isolated_cores<- isolated_cores[ attractor_label>0 ]
+#	attractor_label<- attractor_label [ attractor_label >0 ]
+#	while (length(pulled_cores)) {
+#	#calculate local gain on a merge on an isolated core
+#	lapply(pulled_cores, function(i)
+#		{ old_label=clq_clust_mem[i]
+#		  hypothetical = clq_clust_mem	
+#		  new_label= attractor_label[i]
+#		  hypothetical[i] = new_label
+#		  old_cl1_coef<- cS %ideg% (clq_clust_mem==new_label)
+#		  old_cl1_coef<- old_cl1_coef/( cS %odeg% (clq_clust_mem==new_label))
+#		  new_cl1_coef<- cS %ideg% (hypothetical==new_label)
+#		  new_cl1_coef<-new_cl1_coef/( cS %odeg% (hypothetical==new_label))
+#		  might_swap = (old_cl1_coef < new_cl1_coef) 
+#		  ifelse(might_swap,
+#			 (new_cl1_coef - old_cl1_coef) 
+#			-9999)
+#		}
+#		) %>% unlist() -> swap_gains
+#	print(swap_gains)
+#	if (all(swap_gains <=0 )) pulled_cores<- c() else {
+#		 swap_to_do<- pulled_cores [which.max(swap_gains)]
+#		 new_label <- attractor_label[ swap_to_do ]
+#		 clq_clust_mem[ swap_to_do ] = new_label  
+#		 isolated_cores<- isolated_cores[-c(swap_to_do)]
+#		 n_clust<- n_clust - 1
+#	if (!length(isolated_cores)) { pulled_cores=c() } else {
+#	clust_indicators<- matrix(nrow=nrow(cS), ncol=n_clust)
+#	for ( i in 1:n_clust) clust_indicators[,i] = (clq_clust_mem==i)*1.
+#	#we dont want to count contribution of j to itself
+#	for ( j in isolated_cores) clust_indicators[j, clq_clust_mem[j] ]= 0
+#	# i x c times c x cl -> i x cl
+#	cS[isolated_cores,,drop=FALSE] %*% clust_indicators %>% apply(1, function(x) ifelse(max(x)>0, which.max(x),-999 )) -> attractor_label
+#	pulled_cores<- isolated_cores[ attractor_label>0 ]
+#	isolated_cores<- isolated_cores[ attractor_label>0 ]
+#	attractor_label<- attractor_label [ attractor_label >0 ]
+#		}
+#	}
+#	}	
+
 	clust_mem=list()
 	core=list()
 	# clique lvl membership and core indicator
@@ -49,6 +226,9 @@ greedyCliqueJoin<- function(cS, clq_mem, clq_importances) {
 	attr(clust_mem, "core")= core
 	return(clust_mem)
 }
+
+
+
 
 # at this point input is assumed correct
 # non 0 labels of clq_mem are consecutive positive integers from 1 to max(clq_mem)
@@ -162,13 +342,16 @@ relax_cliques<- function(partition,
 			 frac=0.5,
 			 CS_given=FALSE,
 			 relax_method="greedyCliqueJoin",
-			 clq_importance=NULL) {
+			 clq_importance=NULL,
+			 do_signif=FALSE,
+			 lvl=0.05
+			 ) {
 	stopifnot(relax_method %in% c('greedyCliqueJoin', 'components'))
 	stopifnot( length(frac)==1)
 	stopifnot( (frac >= 0) && (frac <=1))
 	#get clique sim matrix
 	if (!CS_given) {
-	CS= cliqueSimilarity(partition, SorCS)
+	CS= cliqueSimilarity(partition, SorCS, do_signif, lvl)
 	} else {CS=SorCS}
 	if (!is.null(clq_importance)) stopifnot( length(clq_importance)==nrow(CS))
 	#relabel if required
@@ -299,8 +482,8 @@ MinST_DunnIndex<-function(partition, dS,dX.Y="single_linkage",
   if (!is.null(outlier_mask)) partition<- partition[!outlier_mask ]
   labels=unique(partition)
   if (length(labels)==1) return(0)
-  placements = lapply(labels, function(x) partition==x)
-  lapply(placements, function(x) sum(x)) %>% unlist() -> sizes
+  placements = lapply(labels, function(x) which(partition==x))
+  lapply(placements, length) %>% unlist() -> sizes
   if (all(sizes==1)) return(0)
   lapply(seq_along(placements), function(i) 
   { if(sizes[[i]]==1) return(0) else{
@@ -314,8 +497,13 @@ MinST_DunnIndex<-function(partition, dS,dX.Y="single_linkage",
    max_diam= max(diameters)
    ij=0
    distances<-vector()
-   for (i in seq_along(labels))
-     for (j in seq_along(labels))
+   #for efficiency, since if there are singletons and threshold is high
+   #it might happen that almost all clusters are singletons
+   #then following loop is very slow
+   #so first handle clusters of size>1
+   non_singles<- which(sizes!=1)
+   for (i in non_singles)
+     for (j in non_singles)
        if (i<j)
      {ij=ij+1; 
       if (dX.Y=="single_linkage")
@@ -330,8 +518,33 @@ MinST_DunnIndex<-function(partition, dS,dX.Y="single_linkage",
         c(quantile(dx.Y, hausdorff_q),
 	 quantile(dy.X, hausdorff_q)) %>% max() -> distances[[ij]]
       }
-     
        }
+   # singletons to singletons
+   singles= which(sizes==1)
+   placements[singles] %>% unlist () -> singleton_placement
+   sdS<- dS[ singleton_placement, singleton_placement ]	
+   distances= c(distances, sdS[ lower.tri(sdS) ]) 
+   rm(sdS)
+   ij<- length(distances)
+   # singletons to non singletons
+   for (i in singles)
+     for (j in non_singles)
+       if (i<j)
+     {ij=ij+1; 
+     dS[ placements[[i]], 
+         placements[[j]] ]-> ij_distances #if i is singleton then this is just 1d vector
+      if (dX.Y=="single_linkage")
+	distances[[ij]] <- min(ij_distances)
+      if (dX.Y=="hausdorff")
+	distances[[ij]]<- max( min(ij_distances), #distance of singleton to big cluster is just the minimal distance
+						  #quantile over 1 element set is just that element.
+			        quantile(ij_distances, hausdorff_q)  #distance of each el. of big cluster to 
+								     #singleton cluster is just distance of that
+								     #element. there are as many of them as elements
+								     #of big cluster so we take quantile over them
+			      )
+      }
+       
    min_dist<-min(distances)
    if ((max_diam==0) && (min_dist==0)) return(0)
    min_dist/max_diam
@@ -377,7 +590,7 @@ exhaustive_relax_thr_search<- function( clq_mem, CS, n_divisions,
 	  l_i=  max_idx -1
 	  r_i=  max_idx +1
 	}
-	print(c(X_t[[l_i]], X_t[[r_i]]))
+	#print(c(X_t[[l_i]], X_t[[r_i]]))
 	max_neighborhood= c( X_t[[l_i]], ord_CS_ltr[ (ord_CS_ltr >= X_t[[l_i]]) & (ord_CS_ltr <= X_t[[r_i]]) ],
 			     X_t[[r_i]])
 	list( X_t= X_t, Y_t= Y_t, max_idx=max_idx, max_neighborhood= max_neighborhood, partitions=partitions)
@@ -434,7 +647,7 @@ thr_rel_f<- function(frac, clq_mem,  CS, ordCS_ltr, clScoreFun, S,
        A= (y_r - y_l)/(r.s-l.s)
        b= y_l - A*l.s
        y_t= A*t + b
-       print(c(t, y_t))
+       #print(c(t, y_t))
 	
 	}
  return(y_t)
@@ -481,7 +694,7 @@ precision_relax_thr_search<- function(max_neighborhood, clq_mem,
 #'
 #' Function will consider a clique similarity supergraph with weight matrix `CS` where 
 #' `CS_{ij} = [n observed edges between cliques i,j]/[n total possible edges between cliques i,j]`,
-#' It will try to find optimal weight threshold `frac` of `CS` such that when similarity values below `frac` are set to zero, 
+# It will try to find optimal weight threshold `frac` of `CS` such that when similarity values below `frac` are set to zero, 
 #' clusters (of original nodes) resulting from clique relaxation will maximize given `cs_thr_objective` objective function.
 #'
 #' Clique relaxation methods are specified by argument `relax_method`, see [relax_cliques()] for description of each available method.
@@ -566,7 +779,9 @@ relax_cliques_optimally<- function(partition,
 			  keep_init_eval_history=TRUE,
 			  keep_init_partitions=FALSE,
 			  precis=TRUE,
-			  tol=0.1, ...) {
+			  tol=0.1,
+			  do_signif=TRUE,
+			  lvl=0.05, ...) {
 	stopifnot(length(dim(S))==2)	
 	stopifnot(ncol(S)==length(partition))
 	
@@ -592,7 +807,7 @@ relax_cliques_optimally<- function(partition,
 
 	#prepare CS 
 
-	if (is.null(CS))  CS= cliqueSimilarity(partition, S %thr% t_S)
+	if (is.null(CS))  CS= cliqueSimilarity(partition, S %thr% t_S, do_signif, lvl)
 	#relabel if required
 	if (!is.null(attr(CS,"labelMap")))
 	{
@@ -620,23 +835,29 @@ exhaustive_relax_thr_search( clq_mem=partition, CS=CS,
 			     relax_method=relax_method,
 			     relaxator_otherArgs = relaxator_otherArgs,
 					...)->init_search 
-	plot(init_search$X_t, init_search$Y_t)
+	#plot(init_search$X_t, init_search$Y_t)
 	}
 	if (precis) {
 	#precise search
 	if (exh) maxNeigh= init_search$max_neighborhood else maxNeigh=range(CS)
-	print("maxNeigh:")
-	print(maxNeigh)
+	#print("maxNeigh:")
+	#print(maxNeigh)
 	precision_relax_thr_search(max_neighborhood=maxNeigh, 
 				  clq_mem=partition, CS=CS, 
 				clScoreFun=cst_of, S=S, 
 					relax_method=relax_method,
 			relaxator_otherArgs=relaxator_otherArgs, 
 			tol=tol, ...)-> prec_search 	
+	print("init vs prec")
+	print(init_search$Y_t[[ init_search$max_idx ]] )
+	print(prec_search$opt_res$objective)
 	if (exh)  #sometimes prec search fails
-		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$maximum)
-			{prec_search$opt_res$maximum= init_search$X_t[[ init_search$max_idx ]]
+		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$objective)
+			{ 
+			 print("prec failed")
+			 prec_search$opt_res$maximum= init_search$X_t[[ init_search$max_idx ]]
 			 prec_search$opt_res$objective=init_search$Y_t[[ init_search$max_idx ]]	
+			 prec_search$partition= init_search$partitions[[ init_search$max_idx ]]
 			}
 	}
 	

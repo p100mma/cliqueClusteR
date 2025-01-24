@@ -21,6 +21,7 @@
 #' Note that if cliques of `cl_mem` were found in a thresholded version of the similarity matrix, input `WorA` should be the thresholded version.
 #' @param cl_mem an integer vector of nonnegative clique labels where 0 encodes sssumed group of nodes outside of all cliques. Length of `cl_mem` must be equal to number of rows/columns of `worA`.
 #' @param WorA An adjacency or weight matrix of a graph in which the cliques encoded by `cl_mem` were found.
+#' @param do_signif,lvl If `do_signif` is `TRUE`, zero out connections between cliques below statistical significance threshold of `lvl` after multiple test correction, see details
 #' @return A symmetric matrix giving clique to clique similarity, optionally with an additional attribute "labelMap", see details.
 #' @seealso [cliquePartitioneR::tidyUpLabels()], [cliquePartitioneR::greedyCliquePartitioner()], [%thr%()]
 #' @examples
@@ -31,7 +32,7 @@
 #' table(opt_$maximizer_partition) 
 #' @export
 
-cliqueSimilarity<- function(cl_mem, WorA) {
+cliqueSimilarity<- function(cl_mem, WorA, do_signif=TRUE,lvl=0.05) {
 	stopifnot( length(dim(WorA))==2)
 	stopifnot (nrow(WorA)==ncol(WorA))
 	stopifnot (length(cl_mem)==ncol(WorA)) 
@@ -47,13 +48,13 @@ cliqueSimilarity<- function(cl_mem, WorA) {
 	}	
 	diag(WorA)=0
 	A= (WorA>0)*1.
-	C_S= cs_matrix(cl_mem=cl_mem, A=A)
+	C_S= cs_matrix(cl_mem=cl_mem, A=A,do_signif,lvl)
 	if (!labelsOK) attr(C_S, "labelMap")=labelMap
 	C_S
 }
 
 
-cs_matrix<- function(cl_mem, A){
+cs_matrix<- function(cl_mem, A,do_signif,lvl){
   stopifnot(length(unique(cl_mem))<=ncol(A))
   stopifnot(all(A %in% c(0,1)))
   #all the tests below should pass
@@ -66,6 +67,21 @@ cs_matrix<- function(cl_mem, A){
   numer<- t(componentIndicator) %*% n_con   # number of connections from cluster ki to cluster kj
   compSizes<- colSums(componentIndicator)
   denom<- compSizes %o% compSizes #for 100% correctness we would have to put..
+ if( do_signif) {
+   denom %>% ltr_() -> n_trials
+   numer %>% ltr_() -> n_observed
+   prob_edge= sum(n_observed)/sum(n_trials)
+   print("prob edge:")
+   print(prob_edge)
+   #print(length(n_trials))
+   #print(length(n_observed))
+   lapply(seq_along(n_trials), function(i) pbinom(n_observed[[i]], n_trials[[i]], prob=prob_edge,lower.tail=FALSE) ) %>% 
+	unlist() %>% p.adjust() -> null_connectivities
+  	n_observed[ null_connectivities >= lvl ] = 0
+   numer[ lower.tri(numer) ] = n_observed
+   numer<-t(numer)
+   numer[lower.tri(numer) ] = n_observed
+		}
   #... diag(denom)[[i]]<- compSizes[[i]]*(compSizes[[i]]-1)/2
   # but we can put 1s on diagonals instead.
   diag(numer)<-diag(denom)<- 1

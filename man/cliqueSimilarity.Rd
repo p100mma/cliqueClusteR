@@ -4,12 +4,14 @@
 \alias{cliqueSimilarity}
 \title{Compute percentages of all possible connections between cliques}
 \usage{
-cliqueSimilarity(cl_mem, WorA)
+cliqueSimilarity(cl_mem, WorA, do_signif = TRUE, lvl = 0.05)
 }
 \arguments{
 \item{cl_mem}{an integer vector of nonnegative clique labels where 0 encodes sssumed group of nodes outside of all cliques. Length of \code{cl_mem} must be equal to number of rows/columns of \code{worA}.}
 
 \item{WorA}{An adjacency or weight matrix of a graph in which the cliques encoded by \code{cl_mem} were found.}
+
+\item{do_signif, lvl}{If \code{do_signif} is \code{TRUE}, zero out connections between cliques below statistical significance threshold of \code{lvl} after multiple test correction, see details}
 }
 \value{
 A symmetric matrix giving clique to clique similarity, optionally with an additional attribute "labelMap", see details.

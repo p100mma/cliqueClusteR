@@ -14,7 +14,7 @@
 #' 
 #' @docType data
 #'
-#' @usage data(leukemia)
+#' @usage data(leukemia_clusters)
 #'
 #' @format A vector of integers encoding cluster labels of each gene. Zeroes denote clusterless genes.
 #'

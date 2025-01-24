@@ -17,6 +17,8 @@ relax_cliques_optimally(
   keep_init_partitions = FALSE,
   precis = TRUE,
   tol = 0.1,
+  do_signif = TRUE,
+  lvl = 0.05,
   ...
 )
 }
@@ -65,7 +67,6 @@ similarities will be ignored.
 \details{
 Function will consider a clique similarity supergraph with weight matrix \code{CS} where
 \verb{CS_\{ij\} = [n observed edges between cliques i,j]/[n total possible edges between cliques i,j]},
-It will try to find optimal weight threshold \code{frac} of \code{CS} such that when similarity values below \code{frac} are set to zero,
 clusters (of original nodes) resulting from clique relaxation will maximize given \code{cs_thr_objective} objective function.
 
 Clique relaxation methods are specified by argument \code{relax_method}, see \code{\link[=relax_cliques]{relax_cliques()}} for description of each available method.

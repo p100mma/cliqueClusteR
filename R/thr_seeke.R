@@ -317,9 +317,10 @@ thr_optimizer<- function( S, expansion_mode="basic", cl_score="complexity",
 					...
 					)-> prec_search 
 	if (exh)  #sometimes prec search fails
-		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$maximum)
+		if (init_search$Y_t[[ init_search$max_idx ]] > prec_search$opt_res$objective)
 			{prec_search$opt_res$maximum= init_search$X_t[[ init_search$max_idx ]]
 			 prec_search$opt_res$objective=init_search$Y_t[[ init_search$max_idx ]]	
+			 prec_search$partition= init_search$partitions [[ init_search$max_idx ]]
 			}
 
 	}
@@ -347,4 +348,104 @@ thr_optimizer<- function( S, expansion_mode="basic", cl_score="complexity",
 	}
 	optimization_result
 }
+
+
+#' Find optimal threshold according to the subgraph of original graph
+#'
+#' This function will run either [thr_optimizer()]  on a part of the graph induced by input
+#' similarity matrix `S` corresponding only to vertices inside `partition` specified by `which_group`.
+#' 
+#' @details
+#'
+#' If `which_group` is an integer, then it must specify a group of nodes inside `partition` membership vector of size at least 2. 
+#' Otherwise, `NA` is returned.
+#'
+#' Alternatively, `which_group` can be a character string, in which case allowable values are: \itemize{
+#' \item `"biggest"` - set the subgraph to the biggest group present in `partition`.
+#'}
+#'
+#' @param S A square matrix of weights of a undirected similarity graph. Assumed to be symmetric.
+#' @param partition An intger vector of group labels, its length has to be equal to nrow/ncol of `S`.
+#' @param which_group Specification of the group in `partition` which should be used for threshold search, see details. 
+#' @param expansion_mode,cl_score,n_init_steps,keep_init_eval_history,keep_init_partitions,precis,tol,keep_final_partition,custom_partitioner,custom_partitioner_otherArgs,... All other arguments are passed to [thr_oprimizer()], see repsective help page for details.
+#' @return A list with the following fields:
+#' \itemize{
+#' \item `thr` Threshold of weights in `S` that maximizes `cl_score` on a thresholded `S` of a subgraph
+#' \item `objective` A value of `cl_score` corresponding to partition obtained using `thr` on the subgraph.
+#' \item  `maximizer_partition` A partition which resulted at `cl_score` value in `objective`(set if `keep_final_partition` is `TRUE`) 
+#' \item `init_search_points`, `init_scores` Vectors of length `n_init_steps` containing search points and corresponding scores computed in initial search (set if `keep_init_eval_history` is `TRUE` and `n_init_steps` is not `NULL`) 
+#' \item `init_partitions` A list of length `n_init_steps` containing clique partitions corresponding to scores and search points mentioned above (set if `keep_init_partitions` is `TRUE` and `n_init_steps` is not `NULL`) 
+#' \item `which_group` A label of the group of `parition` that was used to find `thr`.
+#' }
+#' @seealso [thr_optimixer()], [critical_mst_thr()], [%thr%()]
+#' @examples
+#' data(leukemia)
+#' opt_res<-thr_optimizer(leukemia) 
+#' 
+#' #NOTE: using threshold for similariry matrix as below 
+#' does not matter since we use cliques as partition (arg number 2)
+#' #but in general it can matter if groups in `parition` are not 
+#' #cliques.
+#' 
+#' opt_iter2<-local_thr_optimization(leukemia %thr% opt_res$thr, opt_res$maximizer_partition, "biggest")
+#' print("first threshold")
+#' print(opt_res$thr)
+#' print("second threshold")
+#' print(opt_iter2$thr)
+#' heatmap(leukemia, scale="none", Rowv=NA, Colv=NA, main="original similarity matrix")
+#' heatmap(leukemia %thr% opt_res$thr, scale="none", Rowv=NA, Colv=NA, main="thresholed similarity")
+#' heatmap(leukemia %thr% opt_iter2$thr, scale="none", Rowv=NA, Colv=NA, main="thresholed similarity 2")
+#' @export
+
+local_thr_optimization<- function( S, partition, which_group, 
+ expansion_mode="basic", cl_score="complexity", 
+			  n_init_steps=10,
+			  keep_init_eval_history=TRUE,
+			  keep_init_partitions=FALSE,
+			  precis=TRUE,
+			  tol=0.1, 
+			  keep_final_partition=TRUE,
+			  custom_partitioner=NULL,
+			  custom_partitioner_otherArgs=NULL,
+			 ...){
+	stopifnot(class(which_group) %in% c("character", "numeric", "integer"))
+	if (class(which_group)=="character")
+		if (!(which_group %in% c("biggest")))
+			stop("currently if which_group is a string then it can only be equal to 'biggest'")	
+	if (class(which_group)%in% c("integer","numeric"))
+		if (!(which_group %in% partition))
+			stop(" if which_group is an integer it must be included in partition")
+	
+	#after following ifs which_group must be an integer included in partition vector
+	if (class(which_group)=="character")
+		if (which_group=="biggest"){
+			fastTable(partition)-> tabulation
+			which_group<-tabulation$value[[ which.max(tabulation$count) ]]
+			}
+	print(which_group)
+	stopifnot(class(which_group)%in% c("integer" , "numeric"))
+	
+	subG<- partition== which_group
+	
+	if (sum(subG)<2) { message("chosen group has size <2, no edges are available, returning NA"); return(NA)}
+	S_subG<-S[ subG, subG , drop=FALSE]	
+thr_optimizer( S_subG, expansion_mode=expansion_mode, cl_score=cl_score, 
+			  n_init_steps= n_init_steps,
+			  keep_init_eval_history=keep_init_eval_history,
+			  keep_init_partitions=keep_init_partitions,
+			  precis=precis,
+			  tol=tol, 
+			  keep_final_partition=keep_final_partition,
+			  custom_partitioner=custom_partitioner,
+			  custom_partitioner_otherArgs=custom_partitioner_otherArgs,
+			 ...)-> res
+	res$which_group= which_group
+	res }
+
+		
+
+			
+		
+		
+
 

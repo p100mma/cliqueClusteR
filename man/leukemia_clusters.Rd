@@ -8,7 +8,7 @@
 A vector of integers encoding cluster labels of each gene. Zeroes denote clusterless genes.
 }
 \usage{
-data(leukemia)
+data(leukemia_clusters)
 }
 \description{
 Dataset was gathered from \code{FCPS} package \link{1}. This object is a 554 reference cluster memebership vector.

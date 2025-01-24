@@ -22,7 +22,10 @@ run_scpcss(
   t_CS_keep_init_eval_history = TRUE,
   t_CS_keep_init_partitions = FALSE,
   t_CS_precis = TRUE,
-  t_CS_tol = 0.1
+  t_CS_tol = 0.1,
+  t_CS_dX.Y = "hausdorff",
+  do_signif = FALSE,
+  lvl = 0.05
 )
 }
 \arguments{
@@ -42,7 +45,7 @@ run_scpcss(
 
 \item{t_CS_relax_method}{Character string specifying clique relaxation method to use, see \code{\link[=relax_cliques]{relax_cliques()}}.}
 
-\item{t_CS_n_init_steps, t_CS_keep_init_eval_history, t_CS_keep_init_partitions, t_CS_precis, t_CS_tol}{Passed to \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} if \code{t_CS} is set to one of \verb{"mst","modularity"}. These parameters control threshold optimization process for clique similarity matrix \code{CS}, see \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} for in depth description.}
+\item{t_CS_n_init_steps, t_CS_keep_init_eval_history, t_CS_keep_init_partitions, t_CS_precis, t_CS_tol, t_CS_dX.Y}{Passed to \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} if \code{t_CS} is set to one of \verb{"mst","modularity"}. These parameters control threshold optimization process for clique similarity matrix \code{CS}, see \code{\link[=relax_cliques_optimally]{relax_cliques_optimally()}} for in depth description.}
 }
 \value{
 A named list with the following components:
